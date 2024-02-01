@@ -7,7 +7,7 @@ use combine::{
         char::{char, letter, newline, space},
         choice::choice,
     },
-    satisfy, sep_by, ParseError, Parser, Stream, skip_many,
+    satisfy, sep_by, skip_many, ParseError, Parser, Stream,
 };
 
 fn attribute<Input>() -> impl Parser<Input, Output = (String, String)>
@@ -57,11 +57,21 @@ fn nodes_<Input>() -> impl Parser<Input, Output = Vec<Box<Node>>>
 where
     Input: Stream<Token = char>,
 {
-    attempt(many(choice((attempt(element()), attempt(text())))))
+    (
+        skip_many(space().or(newline())),
+        attempt(many(
+            (
+                choice((attempt(element()), attempt(text()))),
+                skip_many(space().or(newline())),
+            )
+                .map(|(node, _)| node),
+        )),
+    )
+        .map(|(_, nodes)| nodes)
 }
 
 parser! {
-    fn nodes[Input]()(Input) -> Vec<Box<Node>>
+    pub fn nodes[Input]()(Input) -> Vec<Box<Node>>
     where [Input: Stream<Token = char>]
     {
         nodes_()
@@ -98,7 +108,7 @@ where
 mod test {
     use crate::{
         dom::{AttrMap, Element, Text},
-        html::{attribute, attributes, close_tag, open_tag, element},
+        html::{attribute, attributes, close_tag, element, open_tag},
     };
     use combine::Parser;
 

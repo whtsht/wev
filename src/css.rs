@@ -1,12 +1,12 @@
 use crate::cssom::*;
 use combine::{
     error::StreamError,
-    many1, optional,
+    many, many1, optional,
     parser::{
         char::{char, letter, spaces, string},
         choice::choice,
     },
-    sep_by, sep_end_by, ParseError, Parser, Stream, many,
+    sep_by, sep_end_by, ParseError, Parser, Stream,
 };
 
 fn css_value<Input>() -> impl Parser<Input, Output = CSSValue>
@@ -104,9 +104,9 @@ where
         })
 }
 
-pub fn parse(raw: String) -> Stylesheet {
+pub fn stylesheet(raw: &str) -> Stylesheet {
     rules()
-        .parse(raw.as_str())
+        .parse(raw)
         .map(|(rules, _)| Stylesheet::new(rules))
         .unwrap()
 }
