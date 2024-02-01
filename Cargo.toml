@@ -5,3 +5,9 @@ edition = "2021"
 
 [dependencies]
 combine = "4.6.6"
+crossterm = "0.27.0"
+ratatui = "0.25.0"
+
+[[bin]]
+name = "wev"
+path = "src/bin/main.rs"
