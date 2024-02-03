@@ -1,20 +1,19 @@
 use combine::Parser;
 use std::io::Result;
-use wev::{css, dom::Node, html, style::to_styled_node};
+use wev::{css, dom::Node, html, layout::node_to_object, style::to_styled_node};
 
 fn main() -> Result<()> {
     let node = html::nodes()
         .parse(
             r#"
 <body>
-  <div class="none"><p>this should not be shown</p></div>
+  <p>foo</p>
+  <p class="inline">hoge</p>
+  <p class="inline">piyo</p>
   <style>
-    .none {
-      display: none;
-    }
-    .inline {
-      display: inline;
-    }
+  .inline {
+    display: inline;
+  }
   </style>
 </body>"#,
         )
@@ -42,6 +41,7 @@ fn main() -> Result<()> {
 
     let stylesheet = css::stylesheet(&css);
     let nodes = to_styled_node(&root_node, &stylesheet);
+    let object = node_to_object(nodes.as_ref().unwrap());
 
-    wev::start(nodes.as_ref().unwrap())
+    wev::start(&object)
 }
