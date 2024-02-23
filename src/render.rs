@@ -1,4 +1,4 @@
-use crate::layout::LayoutObject;
+use crate::layout::{LayoutObject, LayoutObjectType};
 use crossterm::{
     event::{self, KeyCode, KeyEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -11,8 +11,8 @@ use ratatui::{
 use std::io::{stdout, Result};
 
 pub fn render(object: &LayoutObject, area: Rect, buf: &mut Buffer) {
-    match object {
-        LayoutObject::Box {
+    match &object.ty {
+        LayoutObjectType::Box {
             direction,
             children,
             border,
@@ -20,7 +20,11 @@ pub fn render(object: &LayoutObject, area: Rect, buf: &mut Buffer) {
             let border = if *border { Borders::ALL } else { Borders::NONE };
             let block = Block::new().borders(border);
 
-            let constraints = vec![Constraint::Length(5); children.len()];
+            let constraints = if *direction == Direction::Vertical {
+                vec![Constraint::Length(1); children.len()]
+            } else {
+                vec![Constraint::Length(4); children.len()]
+            };
             let layout = Layout::default()
                 .direction(*direction)
                 .constraints(constraints)
@@ -31,7 +35,7 @@ pub fn render(object: &LayoutObject, area: Rect, buf: &mut Buffer) {
             });
             block.render(area, buf);
         }
-        LayoutObject::Text(text) => Paragraph::new(*text).render(area, buf),
+        LayoutObjectType::Text(text) => Paragraph::new(*text).render(area, buf),
     }
 }
 

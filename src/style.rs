@@ -110,7 +110,7 @@ mod tests {
             .parse("<p class=\"foo\">hello world</p>")
             .unwrap()
             .0;
-        let stylesheet = css::stylesheet("p { color:red; }".into());
+        let stylesheet = css::stylesheet("p { color:red; }");
         let nodes = to_styled_node(&dom[0], &stylesheet);
         assert_eq!(
             nodes,
@@ -160,8 +160,7 @@ mod tests {
             p[foo=bar] {
                 color:yellow;
             }
-            "#
-            .into(),
+            "#,
         );
         let nodes = to_styled_node(&dom[0], &stylesheet);
 
