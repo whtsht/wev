@@ -3,6 +3,7 @@ use combine::{
     attempt, between,
     error::StreamError,
     many, many1, parser,
+    parser::char::string,
     parser::{
         char::{char, letter, newline, space},
         choice::choice,
@@ -82,7 +83,7 @@ fn text<Input>() -> impl Parser<Input, Output = Box<Node>>
 where
     Input: Stream<Token = char>,
 {
-    many1(satisfy(|c: char| c != '<')).map(|t| Text::new(t))
+    many1(satisfy(|c: char| c != '<')).map(Text::new)
 }
 
 fn element<Input>() -> impl Parser<Input, Output = Box<Node>>
@@ -90,9 +91,9 @@ where
     Input: Stream<Token = char>,
 {
     (open_tag(), nodes(), close_tag()).and_then(
-        |((open_tag_nam, attributes), children, close_tag_name)| {
-            if open_tag_nam == close_tag_name {
-                Ok(Element::new(open_tag_nam, attributes, children))
+        |((open_tag_name, attributes), children, close_tag_name)| {
+            if open_tag_name == close_tag_name {
+                Ok(Element::new(open_tag_name, attributes, children))
             } else {
                 Err(
                     <Input::Error as ParseError<char, _, _>>::StreamError::message_static_message(
@@ -104,11 +105,25 @@ where
     )
 }
 
+pub fn html<Input>() -> impl Parser<Input, Output = Vec<Box<Node>>>
+where
+    Input: Stream<Token = char>,
+{
+    (doctype(), nodes()).map(|(_, nodes)| nodes)
+}
+
+fn doctype<Input>() -> impl Parser<Input, Output = ()>
+where
+    Input: Stream<Token = char>,
+{
+    string("<!DOCTYPE html>").map(|_| ())
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
         dom::{AttrMap, Element, Text},
-        html::{attribute, attributes, close_tag, element, open_tag},
+        html::{attribute, attributes, close_tag, doctype, element, open_tag},
     };
     use combine::Parser;
 
@@ -203,5 +218,13 @@ mod test {
         );
 
         assert!(element().parse("<p>hello world</div>").is_err());
+    }
+
+    #[test]
+    fn test_parse_doctype() {
+        assert_eq!(
+            doctype().parse("<!DOCTYPE html><div></div>"),
+            Ok(((), "<div></div>"))
+        );
     }
 }
