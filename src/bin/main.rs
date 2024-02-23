@@ -1,24 +1,18 @@
 use combine::Parser;
-use std::io::Result;
+use std::{
+    env,
+    fs::File,
+    io::{Read, Result},
+};
 use wev::{css, dom::Node, html, layout::node_to_object, style::to_styled_node};
 
 fn main() -> Result<()> {
-    let node = html::nodes()
-        .parse(
-            r#"
-<body>
-  <p>foo</p>
-  <p class="inline">hoge</p>
-  <p class="inline">piyo</p>
-  <style>
-  .inline {
-    display: inline;
-  }
-  </style>
-</body>"#,
-        )
-        .unwrap()
-        .0;
+    let args = env::args().collect::<Vec<_>>();
+    let mut file = File::open(&args[1])?;
+    let mut content = String::new();
+    file.read_to_string(&mut content)?;
+    let node = html::html().parse(content.as_str()).unwrap().0;
+    println!("{:?}", node);
 
     let root_node = Box::new(Node {
         node_type: wev::dom::NodeType::Element(wev::dom::Element {
@@ -34,14 +28,15 @@ fn main() -> Result<()> {
     let css = wev::dom::select(&root_node, &style_tag);
 
     let css = css
-        .get(0)
-        .and_then(|n| n.children.get(0))
+        .first()
+        .and_then(|n| n.children.first())
         .and_then(|style| style.to_text())
         .unwrap_or_default();
 
     let stylesheet = css::stylesheet(&css);
     let nodes = to_styled_node(&root_node, &stylesheet);
-    let object = node_to_object(nodes.as_ref().unwrap());
+    let _object = node_to_object(nodes.as_ref().unwrap());
+    Ok(())
 
-    wev::start(&object)
+    // wev::start(&object)
 }
