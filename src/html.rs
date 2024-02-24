@@ -3,13 +3,27 @@ use combine::{
     attempt, between,
     error::StreamError,
     many, many1, parser,
-    parser::char::string,
+    parser::char::{self, string_cmp},
     parser::{
         char::{char, letter, newline, space},
         choice::choice,
     },
     satisfy, sep_by, skip_many, ParseError, Parser, Stream,
 };
+
+pub fn cstring<Input>(s: &'static str) -> impl Parser<Input, Output = &str>
+where
+    Input: Stream<Token = char>,
+{
+    string_cmp(s, |l, r| l.eq_ignore_ascii_case(&r))
+}
+
+pub fn ignore<Input>(p: impl Parser<Input>) -> impl Parser<Input, Output = ()>
+where
+    Input: Stream<Token = char>,
+{
+    p.map(|_| ())
+}
 
 fn attribute<Input>() -> impl Parser<Input, Output = (String, String)>
 where
@@ -116,7 +130,11 @@ fn doctype<Input>() -> impl Parser<Input, Output = ()>
 where
     Input: Stream<Token = char>,
 {
-    string("<!DOCTYPE html>").map(|_| ())
+    ignore((
+        cstring("<!DOCTYPE"),
+        attempt(many::<(), _, _>(ignore(satisfy(|c| c != '>')))),
+        char('>'),
+    ))
 }
 
 #[cfg(test)]
@@ -226,5 +244,9 @@ mod test {
             doctype().parse("<!DOCTYPE html><div></div>"),
             Ok(((), "<div></div>"))
         );
+        assert_eq!(
+            doctype().parse(r#"<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">"#),
+            Ok(((), ""))
+        )
     }
 }

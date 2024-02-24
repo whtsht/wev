@@ -1,18 +1,15 @@
 use combine::Parser;
-use std::{
-    env,
-    fs::File,
-    io::{Read, Result},
-};
+use std::{env, io::Result};
 use wev::{css, dom::Node, html, layout::node_to_object, style::to_styled_node};
 
 fn main() -> Result<()> {
     let args = env::args().collect::<Vec<_>>();
-    let mut file = File::open(&args[1])?;
-    let mut content = String::new();
-    file.read_to_string(&mut content)?;
+    let content = match args[1].as_str() {
+        "-w" => wev::request::html_from_www(&args[2]).unwrap(),
+        "-l" => wev::request::html_from_local(&args[2]).unwrap(),
+        _ => panic!("argument `{}` is not supported", args[1]),
+    };
     let node = html::html().parse(content.as_str()).unwrap().0;
-    println!("{:?}", node);
 
     let root_node = Box::new(Node {
         node_type: wev::dom::NodeType::Element(wev::dom::Element {
@@ -35,8 +32,7 @@ fn main() -> Result<()> {
 
     let stylesheet = css::stylesheet(&css);
     let nodes = to_styled_node(&root_node, &stylesheet);
-    let _object = node_to_object(nodes.as_ref().unwrap());
-    Ok(())
+    let object = node_to_object(nodes.as_ref().unwrap());
 
-    // wev::start(&object)
+    wev::start(&object)
 }
