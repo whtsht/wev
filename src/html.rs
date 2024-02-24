@@ -11,32 +11,123 @@ use combine::{
     satisfy, sep_by, skip_many, ParseError, Parser, Stream,
 };
 
-pub fn cstring<Input>(s: &'static str) -> impl Parser<Input, Output = &str>
+fn cstring<Input>(s: &'static str) -> impl Parser<Input, Output = &str>
 where
     Input: Stream<Token = char>,
 {
     string_cmp(s, |l, r| l.eq_ignore_ascii_case(&r))
 }
 
-pub fn ignore<Input>(p: impl Parser<Input>) -> impl Parser<Input, Output = ()>
+fn ignore<Input>(p: impl Parser<Input>) -> impl Parser<Input, Output = ()>
 where
     Input: Stream<Token = char>,
 {
     p.map(|_| ())
 }
 
-fn attribute<Input>() -> impl Parser<Input, Output = (String, String)>
+fn is_ascii_whitespace(c: char) -> bool {
+    // TAB
+    c == '\u{0009}' ||
+        // LF
+        c == '\u{000A}'||
+        // FF
+        c == '\u{000C}'||
+        // CR
+        c == '\u{000D}' ||
+        // SPACE
+        c == '\u{0020}'
+}
+
+fn ascii_whitespace<Input>() -> impl Parser<Input, Output = char>
+where
+    Input: Stream<Token = char>,
+{
+    satisfy(is_ascii_whitespace)
+}
+
+fn attribute_name<Input>() -> impl Parser<Input, Output = String>
+where
+    Input: Stream<Token = char>,
+{
+    many1(satisfy(|c| {
+        c != ' ' && c != '"' && c != '\'' && c != '>' && c != '/' && c != '='
+    }))
+}
+
+fn unquoted_attribute_value<Input>() -> impl Parser<Input, Output = String>
+where
+    Input: Stream<Token = char>,
+{
+    many1(satisfy(|c: char| {
+        !is_ascii_whitespace(c)
+            && c != '"'
+            && c != '\''
+            && c != '='
+            && c != '<'
+            && c != '>'
+            && c != '`'
+    }))
+}
+
+fn empty_attribute<Input>() -> impl Parser<Input, Output = (String, String)>
+where
+    Input: Stream<Token = char>,
+{
+    attribute_name().map(|key| (key, String::new()))
+}
+
+fn unquoted_attribute<Input>() -> impl Parser<Input, Output = (String, String)>
 where
     Input: Stream<Token = char>,
 {
     (
-        many1(letter()),
-        skip_many(space().or(newline())),
+        attribute_name(),
+        skip_many(ascii_whitespace()),
         char('='),
-        skip_many(space().or(newline())),
-        between(char('"'), char('"'), many1(satisfy(|c: char| c != '"'))),
+        skip_many(ascii_whitespace()),
+        unquoted_attribute_value(),
     )
         .map(|(key, _, _, _, value)| (key, value))
+}
+
+fn single_quoted_attribute<Input>() -> impl Parser<Input, Output = (String, String)>
+where
+    Input: Stream<Token = char>,
+{
+    (
+        attribute_name(),
+        skip_many(ascii_whitespace()),
+        char('='),
+        skip_many(ascii_whitespace()),
+        between(char('\''), char('\''), many(satisfy(|c| c != '\''))),
+    )
+        .map(|(key, _, _, _, value)| (key, value))
+}
+
+fn double_quoted_attribute<Input>() -> impl Parser<Input, Output = (String, String)>
+where
+    Input: Stream<Token = char>,
+{
+    (
+        attribute_name(),
+        skip_many(ascii_whitespace()),
+        char('='),
+        skip_many(ascii_whitespace()),
+        between(char('"'), char('"'), many(satisfy(|c| c != '"'))),
+    )
+        .map(|(key, _, _, _, value)| (key, value))
+}
+
+fn attribute<Input>() -> impl Parser<Input, Output = (String, String)>
+where
+    Input: Stream<Token = char>,
+{
+    choice((
+        attempt(single_quoted_attribute()),
+        attempt(double_quoted_attribute()),
+        attempt(unquoted_attribute()),
+        attempt(empty_attribute()),
+    ))
 }
 
 fn attributes<Input>() -> impl Parser<Input, Output = AttrMap>
@@ -76,7 +167,11 @@ where
         skip_many(space().or(newline())),
         attempt(many(
             (
-                choice((attempt(element()), attempt(text()))),
+                choice((
+                    attempt(normal_element()),
+                    attempt(void_element()),
+                    attempt(text()),
+                )),
                 skip_many(space().or(newline())),
             )
                 .map(|(node, _)| node),
@@ -100,7 +195,14 @@ where
     many1(satisfy(|c: char| c != '<')).map(Text::new)
 }
 
-fn element<Input>() -> impl Parser<Input, Output = Box<Node>>
+fn void_element<Input>() -> impl Parser<Input, Output = Box<Node>>
+where
+    Input: Stream<Token = char>,
+{
+    open_tag().map(|(tag_name, attributes)| Element::new(tag_name, attributes, vec![]))
+}
+
+fn normal_element<Input>() -> impl Parser<Input, Output = Box<Node>>
 where
     Input: Stream<Token = char>,
 {
@@ -141,7 +243,7 @@ where
 mod test {
     use crate::{
         dom::{AttrMap, Element, Text},
-        html::{attribute, attributes, close_tag, doctype, element, open_tag},
+        html::{attribute, attributes, close_tag, doctype, normal_element, open_tag, void_element},
     };
     use combine::Parser;
 
@@ -151,6 +253,29 @@ mod test {
             attribute().parse("test=\"foobar\""),
             Ok((("test".to_string(), "foobar".to_string()), ""))
         );
+
+        assert_eq!(
+            attribute().parse("http-equiv='foobar'"),
+            Ok((("http-equiv".to_string(), "foobar".to_string()), ""))
+        );
+
+        assert_eq!(
+            attribute().parse("value=yes"),
+            Ok((("value".to_string(), "yes".to_string()), ""))
+        );
+
+        assert_eq!(
+            attribute().parse("disabled"),
+            Ok((("disabled".to_string(), "".to_string()), ""))
+        );
+
+        assert_eq!(
+            attribute().parse(r#"content="text/html; charset=utf8""#),
+            Ok((
+                ("content".to_string(), "text/html; charset=utf8".to_string()),
+                ""
+            ))
+        )
     }
 
     #[test]
@@ -190,7 +315,12 @@ mod test {
         }
 
         {
-            assert!(open_tag().parse("<p id>").is_err());
+            let mut attributes = AttrMap::new();
+            attributes.insert("disabled".to_string(), "".to_string());
+            assert_eq!(
+                open_tag().parse("<input disabled>"),
+                Ok((("input".to_string(), attributes), ""))
+            );
         }
     }
 
@@ -203,12 +333,12 @@ mod test {
     #[test]
     fn test_parse_element() {
         assert_eq!(
-            element().parse("<p></p>"),
+            normal_element().parse("<p></p>"),
             Ok((Element::new("p".to_string(), AttrMap::new(), vec![]), ""))
         );
 
         assert_eq!(
-            element().parse("<p>hello world</p>"),
+            normal_element().parse("<p>hello world</p>"),
             Ok((
                 Element::new(
                     "p".to_string(),
@@ -220,7 +350,7 @@ mod test {
         );
 
         assert_eq!(
-            element().parse("<div><p>hello world</p></div>"),
+            normal_element().parse("<div><p>hello world</p></div>"),
             Ok((
                 Element::new(
                     "div".to_string(),
@@ -235,7 +365,7 @@ mod test {
             ))
         );
 
-        assert!(element().parse("<p>hello world</div>").is_err());
+        assert!(normal_element().parse("<p>hello world</div>").is_err());
     }
 
     #[test]
@@ -248,5 +378,22 @@ mod test {
             doctype().parse(r#"<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">"#),
             Ok(((), ""))
         )
+    }
+
+    #[test]
+    fn test_void_element() {
+        assert_eq!(
+            void_element().parse(r#"<br>"#),
+            Ok((Element::new("br".to_string(), AttrMap::new(), vec![]), ""))
+        );
+        let mut attributes = AttrMap::new();
+        attributes.insert("content".to_string(), "text/html; charset=utf8".to_string());
+        attributes.insert("http-equiv".to_string(), "Content-Type".to_string());
+
+        assert_eq!(
+            void_element()
+                .parse(r#"<META content="text/html; charset=utf8" http-equiv=Content-Type>"#),
+            Ok((Element::new("META".to_string(), attributes, vec![]), ""))
+        );
     }
 }
