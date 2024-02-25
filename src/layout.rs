@@ -38,7 +38,7 @@ fn split_whitespace_keep_space(text: &str) -> Vec<&str> {
     let mut result = Vec::new();
     let mut current_index = 0;
 
-    for (index, character) in text.chars().enumerate() {
+    for (index, character) in text.char_indices() {
         if character.is_whitespace() {
             result.push(&text[current_index..=index]);
             current_index = index + 1;
@@ -88,8 +88,8 @@ pub fn node_to_object<'a>(node: &'a StyledNode<'a>, rect: Rect) -> LayoutObject<
             let height = y;
             LayoutObject {
                 area: Rect {
-                    x,
-                    y,
+                    x: rect.x,
+                    y: rect.y,
                     width,
                     height,
                 },
@@ -109,6 +109,7 @@ pub fn node_to_object<'a>(node: &'a StyledNode<'a>, rect: Rect) -> LayoutObject<
                         height: rect.height,
                     }
                 } else {
+                    y += 1;
                     Rect {
                         x: rect.x,
                         y,
