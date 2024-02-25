@@ -2,7 +2,7 @@ use crate::dom::{AttrMap, Element, Node, Text};
 use combine::{
     attempt, between,
     error::StreamError,
-    many, many1, parser,
+    many, many1, optional, parser,
     parser::char::{self, string_cmp},
     parser::{
         char::{char, letter, newline, space},
@@ -225,7 +225,7 @@ pub fn html<Input>() -> impl Parser<Input, Output = Vec<Box<Node>>>
 where
     Input: Stream<Token = char>,
 {
-    (doctype(), nodes()).map(|(_, nodes)| nodes)
+    (optional(attempt(doctype())), nodes()).map(|(_, nodes)| nodes)
 }
 
 fn doctype<Input>() -> impl Parser<Input, Output = ()>

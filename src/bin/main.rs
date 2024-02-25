@@ -1,4 +1,6 @@
 use combine::Parser;
+use crossterm::terminal;
+use ratatui::layout::Rect;
 use std::{env, io::Result};
 use wev::{css, dom::Node, html, layout::node_to_object, style::to_styled_node};
 
@@ -9,6 +11,10 @@ fn main() -> Result<()> {
         "-l" => wev::request::html_from_local(&args[2]).unwrap(),
         _ => panic!("argument `{}` is not supported", args[1]),
     };
+    let content = content
+        .chars()
+        .map(|c| if c == '\n' { ' ' } else { c })
+        .collect::<String>();
     let node = html::html().parse(content.as_str()).unwrap().0;
 
     let root_node = Box::new(Node {
@@ -29,10 +35,18 @@ fn main() -> Result<()> {
         .and_then(|n| n.children.first())
         .and_then(|style| style.to_text())
         .unwrap_or_default();
-
     let stylesheet = css::stylesheet(&css);
     let nodes = to_styled_node(&root_node, &stylesheet);
-    let object = node_to_object(nodes.as_ref().unwrap());
+    let (width, height) = terminal::size()?;
+    let object = node_to_object(
+        nodes.as_ref().unwrap(),
+        Rect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        },
+    );
 
     wev::start(&object)
 }

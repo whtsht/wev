@@ -8,6 +8,7 @@ combine = "4.6.6"
 crossterm = "0.27.0"
 ratatui = "0.25.0"
 reqwest = { version = "0.11", features = ["blocking", "rustls-tls"], default-features = false }
+unicode-width = "0.1.7"
 
 [[bin]]
 name = "wev"
