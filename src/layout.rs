@@ -57,10 +57,11 @@ fn split_string_by_width(text: &str, width: usize, offset: usize) -> Vec<&str> {
     result
 }
 
-fn text_to_object(text: &str, area: Rect) -> LayoutObject<'_> {
+fn text_to_object(text: &str, area: Rect, offset: usize) -> LayoutObject<'_> {
     let mut texts = vec![];
     let mut y = area.y;
-    for d in split_string_by_width(text, area.width as usize, 0) {
+    let mut content_len = 0;
+    for d in split_string_by_width(text, area.width as usize, offset) {
         let len = UnicodeWidthStr::width(d) as u16;
         let area = Rect {
             x: area.x,
@@ -69,11 +70,12 @@ fn text_to_object(text: &str, area: Rect) -> LayoutObject<'_> {
             height: 1,
         };
         y += 1;
+        content_len += len;
 
         texts.push(Text { area, data: d })
     }
 
-    let (width, height) = (texts.last().map(|t| t.area.width).unwrap_or(0), y - area.y);
+    let (width, height) = (content_len, 1);
     LayoutObject {
         area: Rect {
             x: area.x,
@@ -85,23 +87,38 @@ fn text_to_object(text: &str, area: Rect) -> LayoutObject<'_> {
     }
 }
 
-fn children_to_object<'a>(node: &'a StyledNode<'a>, area: Rect) -> LayoutObject<'a> {
-    let mut x = area.x;
+fn children_to_object<'a>(node: &'a StyledNode<'a>, area: Rect, offset: usize) -> LayoutObject<'a> {
     let mut y = area.y;
+    let mut height = 0;
     let mut objects = vec![];
+    let mut content_len = offset as u16;
+    let mut width = 0;
     for child in node.children.iter() {
         let area = Rect {
-            x: area.x,
+            x: area.x + (content_len % area.width),
             y,
             width: area.width,
             height: area.height,
         };
-        let object = node_to_object(child, area);
-        x = object.area.width;
-        y += object.area.height;
+        let object = node_to_object(child, area, offset);
+        content_len += object.area.width;
+        if !inline_node(child) {
+            y += object.area.height;
+            height += object.area.height;
+            if width < content_len {
+                width = content_len;
+            }
+            content_len = 0;
+        } else {
+            y = area.y + content_len / area.width;
+            height = (content_len + area.width - 1) / area.width;
+        }
         objects.push(object);
     }
-    let (width, height) = (x, y - area.y);
+    if width < content_len {
+        width = content_len;
+    }
+
     LayoutObject {
         area: Rect {
             x: area.x,
@@ -113,10 +130,10 @@ fn children_to_object<'a>(node: &'a StyledNode<'a>, area: Rect) -> LayoutObject<
     }
 }
 
-pub fn node_to_object<'a>(node: &'a StyledNode<'a>, area: Rect) -> LayoutObject<'a> {
+pub fn node_to_object<'a>(node: &'a StyledNode<'a>, area: Rect, offset: usize) -> LayoutObject<'a> {
     match node.node_type {
-        NodeType::Text(dom::Text { data }) => text_to_object(data, area),
-        NodeType::Element(_) => children_to_object(node, area),
+        NodeType::Text(dom::Text { data }) => text_to_object(data, area, offset),
+        NodeType::Element(_) => children_to_object(node, area, offset),
     }
 }
 
@@ -155,7 +172,7 @@ mod tests {
     #[test]
     fn test_text_to_object() {
         assert_eq!(
-            text_to_object("hello world", Rect::new(0, 0, 20, 3)),
+            text_to_object("hello world", Rect::new(0, 0, 20, 3), 0),
             LayoutObject {
                 area: Rect::new(0, 0, 11, 1),
                 ty: LayoutObjectType::Texts(vec![Text {
@@ -166,9 +183,9 @@ mod tests {
         );
 
         assert_eq!(
-            text_to_object("hello world", Rect::new(0, 0, 3, 10)),
+            text_to_object("hello world", Rect::new(0, 0, 3, 10), 0),
             LayoutObject {
-                area: Rect::new(0, 0, 2, 4),
+                area: Rect::new(0, 0, 11, 1),
                 ty: LayoutObjectType::Texts(vec![
                     Text {
                         area: Rect::new(0, 0, 3, 1),
@@ -191,9 +208,9 @@ mod tests {
         );
 
         assert_eq!(
-            text_to_object("hello world", Rect::new(3, 6, 5, 10)),
+            text_to_object("hello world", Rect::new(3, 6, 5, 10), 0),
             LayoutObject {
-                area: Rect::new(3, 6, 1, 3),
+                area: Rect::new(3, 6, 11, 1),
                 ty: LayoutObjectType::Texts(vec![
                     Text {
                         area: Rect::new(3, 6, 5, 1),
@@ -206,6 +223,27 @@ mod tests {
                     Text {
                         area: Rect::new(3, 8, 1, 1),
                         data: "d"
+                    },
+                ])
+            }
+        );
+
+        assert_eq!(
+            text_to_object("hello world", Rect::new(3, 6, 5, 10), 4),
+            LayoutObject {
+                area: Rect::new(3, 6, 11, 1),
+                ty: LayoutObjectType::Texts(vec![
+                    Text {
+                        area: Rect::new(3, 6, 1, 1),
+                        data: "h"
+                    },
+                    Text {
+                        area: Rect::new(3, 7, 5, 1),
+                        data: "ello "
+                    },
+                    Text {
+                        area: Rect::new(3, 8, 5, 1),
+                        data: "world"
                     },
                 ])
             }
@@ -226,7 +264,7 @@ mod tests {
 
         let node = crate::style::to_styled_node(node, &stylesheet).unwrap();
         assert_eq!(
-            children_to_object(&node, Rect::new(0, 0, 80, 40)),
+            children_to_object(&node, Rect::new(0, 0, 80, 40), 0),
             LayoutObject {
                 area: Rect::new(0, 0, 5, 2),
                 ty: LayoutObjectType::Block {
@@ -259,50 +297,42 @@ mod tests {
                 }
             }
         );
-        // let html = r#"
-        // <div>
-        //     aaa
-        //     <strong>bbbbb</strong>
-        // </div>
-        //     "#;
-        // let css = r#"strong { display: inline; }"#;
-        // let node = &crate::html::html().parse(html).unwrap().0[0];
-        // let stylesheet = crate::css::stylesheet(css);
-        //
-        // let node = crate::style::to_styled_node(node, &stylesheet).unwrap();
-        // assert_eq!(
-        //     children_to_object(&node, Rect::new(0, 0, 80, 40)),
-        //     LayoutObject {
-        //         area: Rect::new(0, 0, 8, 1),
-        //         ty: LayoutObjectType::Block {
-        //             children: vec![
-        //                 LayoutObject {
-        //                     area: Rect::new(0, 0, 3, 1),
-        //                     ty: LayoutObjectType::Block {
-        //                         children: vec![LayoutObject {
-        //                             area: Rect::new(0, 0, 3, 1),
-        //                             ty: LayoutObjectType::Texts(vec![Text {
-        //                                 area: Rect::new(0, 0, 3, 1),
-        //                                 data: "aaa"
-        //                             }])
-        //                         },]
-        //                     }
-        //                 },
-        //                 LayoutObject {
-        //                     area: Rect::new(3, 0, 5, 1),
-        //                     ty: LayoutObjectType::Block {
-        //                         children: vec![LayoutObject {
-        //                             area: Rect::new(3, 0, 5, 1),
-        //                             ty: LayoutObjectType::Texts(vec![Text {
-        //                                 area: Rect::new(3, 0, 5, 1),
-        //                                 data: "bbbbb"
-        //                             }])
-        //                         }]
-        //                     }
-        //                 }
-        //             ]
-        //         }
-        //     }
-        // );
+        let html = r#"
+            <div>とても<strong>強い</strong></div>
+                "#;
+        let css = r#"strong { display: inline; }"#;
+        let node = &crate::html::html().parse(html).unwrap().0[0];
+        let stylesheet = crate::css::stylesheet(css);
+
+        let node = crate::style::to_styled_node(node, &stylesheet).unwrap();
+        assert_eq!(
+            children_to_object(&node, Rect::new(0, 0, 80, 40), 0),
+            LayoutObject {
+                area: Rect::new(0, 0, 10, 1),
+                ty: LayoutObjectType::Block {
+                    children: vec![
+                        LayoutObject {
+                            area: Rect::new(0, 0, 6, 1),
+                            ty: LayoutObjectType::Texts(vec![Text {
+                                area: Rect::new(0, 0, 6, 1),
+                                data: "とても"
+                            }])
+                        },
+                        LayoutObject {
+                            area: Rect::new(6, 0, 4, 1),
+                            ty: LayoutObjectType::Block {
+                                children: vec![LayoutObject {
+                                    area: Rect::new(6, 0, 4, 1),
+                                    ty: LayoutObjectType::Texts(vec![Text {
+                                        area: Rect::new(6, 0, 4, 1),
+                                        data: "強い"
+                                    }])
+                                }]
+                            }
+                        }
+                    ]
+                }
+            }
+        );
     }
 }

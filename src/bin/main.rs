@@ -46,6 +46,7 @@ fn main() -> Result<()> {
             width,
             height,
         },
+        0,
     );
 
     wev::start(&object)
