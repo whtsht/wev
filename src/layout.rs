@@ -26,6 +26,36 @@ pub struct Text<'a> {
     pub data: &'a str,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct BlockObject<'a> {
+    pub area: Rect,
+    pub children: Vec<BlockObjectChild<'a>>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum BlockObjectChild<'a> {
+    BlockObject(BlockObject<'a>),
+    InlineObject(InlineObject<'a>),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct InlineObject<'a> {
+    pub area: Rect,
+    pub children: Vec<InlineObjectChild<'a>>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum InlineObjectChild<'a> {
+    InlineObject(InlineObject<'a>),
+    TextObject(TextObject<'a>),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TextObject<'a> {
+    pub area: Rect,
+    pub content: Vec<&'a str>,
+}
+
 pub fn inline_node(node: &StyledNode) -> bool {
     match node.node_type {
         NodeType::Element(_) => {
@@ -55,6 +85,31 @@ fn split_string_by_width(text: &str, width: usize, offset: usize) -> Vec<&str> {
     result.push(&text[prev_index..]);
 
     result
+}
+
+fn text_object(text: &str, x: u16, y: u16) -> TextObject<'_> {
+    TextObject {
+        area: Rect {
+            x,
+            y,
+            width: text.width() as u16,
+            height: 1,
+        },
+        content: vec![text],
+    }
+}
+
+fn inline_object<'a>(node: &'a StyledNode<'a>, x: u16, y: u16) -> InlineObject<'a> {
+    let width = 0;
+    InlineObject {
+        area: Rect {
+            x,
+            y,
+            width,
+            height: 1,
+        },
+        children: vec![],
+    }
 }
 
 fn text_to_object(text: &str, area: Rect, offset: usize) -> LayoutObject<'_> {
